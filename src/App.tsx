@@ -15,21 +15,92 @@ import Notifications from './pages/Notifications';
 import InstitutionProfile from './pages/InstitutionProfile';
 import { Institution } from './types';
 
+import { useAuth } from './contexts/AuthContext';
+import Auth from './pages/Auth';
+import { supabase } from './lib/supabase';
+
 export default function App() {
+  const { user, profile, isLoading } = useAuth();
   const [activeTab, setActiveTab] = useState('home');
-  const [isOnboarded, setIsOnboarded] = useState(false);
-  const [showOnboarding, setShowOnboarding] = useState(false);
   const [selectedInst, setSelectedInst] = useState<Institution | null>(null);
   const [showPostOverlay, setShowPostOverlay] = useState(false);
+  const [newPostContent, setNewPostContent] = useState('');
+  const [newPostType, setNewPostType] = useState('student');
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // Global Tab Change Listener
-  React.useEffect(() => {
-    const handleTabChange = (e: any) => {
-        if (e.detail === 'discover') setActiveTab('discover');
-    };
-    window.addEventListener('changeTab', handleTabChange);
-    return () => window.removeEventListener('changeTab', handleTabChange);
-  }, []);
+  const handleCreatePost = async () => {
+    if (!profile || !newPostContent.trim()) return;
+    setIsSubmitting(true);
+    
+    try {
+      const { error } = await supabase
+        .from('posts')
+        .insert({
+          author_id: user?.id,
+          type: newPostType,
+          content: newPostContent,
+          institution: profile.institution,
+          institution_id: profile.institution_id || 'manual',
+          governorate: profile.governorate,
+          is_verified: profile.role === 'institution_rep'
+        })
+        .select();
+
+      if (error) throw error;
+      
+      setNewPostContent('');
+      setShowPostOverlay(false);
+    } catch (err) {
+      console.error('Error creating post:', err);
+      alert('خطأ أثناء النشر');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  // Splash Screen
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-secondary flex flex-col items-center justify-center gap-6">
+        <motion.div 
+          animate={{ scale: [1, 1.1, 1], rotate: [0, 5, -5, 0] }}
+          transition={{ duration: 2, repeat: Infinity }}
+          className="w-24 h-24 bg-primary rounded-[2.5rem] flex items-center justify-center text-secondary shadow-2xl shadow-primary/20"
+        >
+          <Sparkles size={48} />
+        </motion.div>
+        <div className="space-y-2 text-center">
+            <h1 className="text-white font-black text-3xl tracking-tight">رافد</h1>
+            <p className="text-primary text-xs font-black uppercase tracking-[0.4em]">Loading Your Path</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Not logged in
+  if (!user) {
+    if (selectedInst) {
+      return <InstitutionProfile institution={selectedInst} onBack={() => setSelectedInst(null)} />;
+    }
+    return <Home onStart={() => setActiveTab('auth')} onSelectInstitution={setSelectedInst} />;
+  }
+
+  // Handle Login process (Show Auth page)
+  if (user && activeTab === 'auth') {
+      // User just logged in, if they have a profile, go home, otherwise they'll hit onboarding
+      if (profile?.institution) setActiveTab('home');
+  }
+
+  if (activeTab === 'auth') {
+      return <Auth />;
+  }
+
+  // Logged in but profile incomplete
+  if (user && !profile?.institution) {
+    return <Onboarding onComplete={() => {}} />;
+  }
+
+  // Main App (Authenticated)
 
   // Simple Router
   const renderContent = () => {
@@ -67,27 +138,6 @@ export default function App() {
         setActiveTab(tab);
     }
   };
-
-  if (!isOnboarded && !showOnboarding) {
-    if (selectedInst) {
-      return (
-        <div className="min-h-screen bg-surface">
-          <InstitutionProfile 
-            institution={selectedInst} 
-            onBack={() => setSelectedInst(null)} 
-          />
-        </div>
-      );
-    }
-    return <Home onStart={() => setShowOnboarding(true)} onSelectInstitution={setSelectedInst} />;
-  }
-
-  if (showOnboarding) {
-    return <Onboarding onComplete={() => {
-      setIsOnboarded(true);
-      setShowOnboarding(false);
-    }} />;
-  }
 
   // Determine header title
   let headerTitle = "رافد";
@@ -163,12 +213,16 @@ export default function App() {
 
                     <div className="grid grid-cols-2 gap-4">
                         {[
-                            { label: 'سؤال أكاديمي', icon: HelpCircle, color: 'bg-blue-50 text-blue-500' },
-                            { label: 'مشاركة تجربة', icon: Sparkles, color: 'bg-orange-50 text-orange-500' },
-                            { label: 'إعلان طلابي', icon: Bell, color: 'bg-purple-50 text-purple-500' },
-                            { label: 'طلب نصيحة', icon: MessageCircle, color: 'bg-green-50 text-green-500' },
+                            { id: 'student', label: 'سؤال أكاديمي', icon: HelpCircle, color: 'bg-blue-50 text-blue-500' },
+                            { id: 'insight', label: 'مشاركة تجربة', icon: Sparkles, color: 'bg-orange-50 text-orange-500' },
+                            { id: 'announcement', label: 'إعلان طلابي', icon: Bell, color: 'bg-purple-50 text-purple-500' },
+                            { id: 'insight_advice', label: 'طلب نصيحة', icon: MessageCircle, color: 'bg-green-50 text-green-500' },
                         ].map(type => (
-                            <button key={type.label} className={`${type.color} p-6 rounded-3xl border border-transparent hover:border-current/20 transition-all flex flex-col items-center gap-3 active:scale-95`}>
+                            <button 
+                                key={type.id} 
+                                onClick={() => setNewPostType(type.id)}
+                                className={`${type.color} p-6 rounded-3xl border-2 transition-all flex flex-col items-center gap-3 active:scale-95 ${newPostType === type.id ? 'border-current' : 'border-transparent'}`}
+                            >
                                 <type.icon size={32} />
                                 <span className="font-black text-xs">{type.label}</span>
                             </button>
@@ -176,23 +230,32 @@ export default function App() {
                     </div>
 
                     <div className="space-y-4 pt-4 border-t border-gray-100">
-                        <div className="bg-white rounded-[2rem] p-6 border border-gray-100">
+                        <div className="bg-white rounded-[2rem] p-6 border border-gray-100 focus-within:border-primary transition-all">
                             <textarea 
                                 placeholder="ماذا يدور في ذهنك؟"
+                                value={newPostContent}
+                                onChange={(e) => setNewPostContent(e.target.value)}
                                 className="w-full bg-transparent border-none focus:ring-0 outline-none font-bold text-gray-600 min-h-[120px] resize-none"
                             />
                             <div className="flex items-center justify-between pt-4 border-t border-gray-50 mt-4">
                                 <div className="flex gap-4 text-gray-400">
                                     <button className="hover:text-primary transition-colors"><Image size={20} /></button>
-                                    <button className="hover:text-primary transition-colors"><MapPin size={20} /></button>
-                                    <button className="hover:text-primary transition-colors"><AtSign size={20} /></button>
+                                    <button className="hover:text-primary transition-colors text-xs font-black px-3 py-1 bg-surface rounded-lg"># {profile?.institution}</button>
                                 </div>
-                                <span className="text-[10px] font-black text-gray-200">280 حرف متبقي</span>
+                                <span className="text-[10px] font-black text-gray-200">{280 - newPostContent.length} حرف متبقي</span>
                             </div>
                         </div>
 
-                        <button className="w-full bg-secondary text-white py-5 rounded-3xl font-black text-sm uppercase tracking-widest shadow-xl shadow-secondary/20 hover:bg-primary hover:text-secondary transition-all active:scale-95">
-                            نشر في رافد
+                        <button 
+                            onClick={handleCreatePost}
+                            disabled={isSubmitting || !newPostContent.trim()}
+                            className="w-full bg-secondary text-white py-5 rounded-3xl font-black text-sm uppercase tracking-widest shadow-xl shadow-secondary/20 hover:bg-primary hover:text-secondary transition-all active:scale-95 disabled:opacity-50 flex items-center justify-center gap-3"
+                        >
+                            {isSubmitting ? (
+                                <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                            ) : (
+                                'نشر في رافد'
+                            )}
                         </button>
                     </div>
                 </motion.div>

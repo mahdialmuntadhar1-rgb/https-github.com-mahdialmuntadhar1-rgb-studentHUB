@@ -7,14 +7,18 @@ import {
   Briefcase, Award, Users, Rocket, BarChart3
 } from 'lucide-react';
 import { GOVERNORATES, SAMPLE_INSTITUTIONS } from '../constants';
+import { supabase } from '../lib/supabase';
+import { useAuth } from '../contexts/AuthContext';
 
 interface OnboardingProps {
   onComplete: () => void;
 }
 
 export default function Onboarding({ onComplete }: OnboardingProps) {
+  const { user, refreshProfile } = useAuth();
   const [step, setStep] = useState(1);
   const [searchQuery, setSearchQuery] = useState('');
+  const [isFinishing, setIsFinishing] = useState(false);
   const [data, setData] = useState({
     role: '',
     roleLabel: '',
@@ -30,6 +34,35 @@ export default function Onboarding({ onComplete }: OnboardingProps) {
 
   const nextStep = () => setStep(s => s + 1);
   const prevStep = () => setStep(s => s - 1);
+
+  const handleFinish = async () => {
+    if (!user) return;
+    setIsFinishing(true);
+    try {
+      const { error } = await supabase
+        .from('profiles')
+        .upsert({
+          id: user.id,
+          full_name: data.name,
+          governorate: data.governorate,
+          institution: data.institution,
+          institution_id: data.institutionId,
+          stage: data.stage,
+          interests: data.interests,
+          bio: data.bio,
+          updated_at: new Date().toISOString(),
+        });
+
+      if (error) throw error;
+      await refreshProfile();
+      onComplete();
+    } catch (err) {
+      console.error('Error saving profile:', err);
+      alert('حدث خطأ أثناء حفظ الملف الشخصي. يرجى المحاولة مرة أخرى.');
+    } finally {
+      setIsFinishing(false);
+    }
+  };
 
   // --- Step Content Definitions ---
 
@@ -347,10 +380,15 @@ export default function Onboarding({ onComplete }: OnboardingProps) {
               initial={{ opacity: 0, scale: 0.9 }}
               animate={{ opacity: 1, scale: 1 }}
               transition={{ delay: 0.8 }}
-              onClick={onComplete}
-              className="w-full bg-secondary text-white py-6 rounded-3xl font-black text-xl shadow-2xl shadow-secondary/30 active:scale-95 transition-all mt-10"
+              onClick={handleFinish}
+              disabled={isFinishing}
+              className="w-full bg-secondary text-white py-6 rounded-3xl font-black text-xl shadow-2xl shadow-secondary/30 active:scale-95 transition-all mt-10 disabled:opacity-50"
             >
-                استكشف عالمك الأكاديمي
+                {isFinishing ? (
+                  <div className="w-8 h-8 border-4 border-white border-t-transparent rounded-full animate-spin mx-auto" />
+                ) : (
+                  'استكشف عالمك الأكاديمي'
+                )}
             </motion.button>
           </div>
         );

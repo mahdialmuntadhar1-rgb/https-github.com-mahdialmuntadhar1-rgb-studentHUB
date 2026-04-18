@@ -1,46 +1,94 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import PostCard from '../components/PostCard';
-import { SAMPLE_POSTS, GOVERNORATES } from '../constants';
-import { Filter, Sparkles, TrendingUp, Users, Map as MapIcon, GraduationCap, ChevronLeft } from 'lucide-react';
+import { GOVERNORATES } from '../constants';
+import { Filter, Sparkles, TrendingUp, Users, Map as MapIcon, GraduationCap, ChevronLeft, RefreshCw } from 'lucide-react';
 import { PostSkeleton } from '../components/Skeletons';
+import { supabase } from '../lib/supabase';
+import { useAuth } from '../contexts/AuthContext';
+import { Post } from '../types';
 
 export default function Feed() {
+  const { profile } = useAuth();
   const [activeFilter, setActiveFilter] = useState('كل العراق');
   const [isLoading, setIsLoading] = useState(true);
-  
-  // Sort posts: My Institution first, then Trending
-  const [posts] = useState(() => {
-    return [...SAMPLE_POSTS].sort((a, b) => {
-        const myUni = 'جامعة بغداد';
-        if (a.institutionName === myUni && b.institutionName !== myUni) return -1;
-        if (b.institutionName === myUni && a.institutionName !== myUni) return 1;
-        return b.likes - a.likes;
-    });
-  });
+  const [posts, setPosts] = useState<Post[]>([]);
+  const [error, setError] = useState<string | null>(null);
 
-  // Simulate loading on filter change
-  useEffect(() => {
+  const fetchPosts = async () => {
     setIsLoading(true);
-    const timer = setTimeout(() => {
+    setError(null);
+    try {
+      let query = supabase
+        .from('posts')
+        .select(`
+          *,
+          profiles:author_id (
+            full_name,
+            avatar_url
+          )
+        `)
+        .order('created_at', { ascending: false });
+
+      const { data, error } = await query;
+
+      if (error) throw error;
+
+      // Transform Supabase data to App Post type
+      const transformedPosts: Post[] = (data || []).map(p => ({
+        id: p.id,
+        type: p.type,
+        institutionName: p.institution,
+        institutionLogo: `https://picsum.photos/seed/${p.institution_id}/100/100`, // Placeholder or fetched logo
+        governorate: p.governorate as any,
+        content: p.content,
+        title: p.title,
+        image: p.image_url,
+        likes: p.likes_count,
+        comments: p.comments_count,
+        views: p.views_count,
+        timestamp: new Date(p.created_at).toLocaleDateString('ar-IQ'),
+        isVerified: p.is_verified,
+        authorName: p.profiles?.full_name,
+        authorAvatar: p.profiles?.avatar_url,
+        ...(p.metadata || {})
+      }));
+
+      setPosts(transformedPosts);
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
       setIsLoading(false);
-    }, 600);
-    return () => clearTimeout(timer);
-  }, [activeFilter]);
+    }
+  };
+
+  useEffect(() => {
+    fetchPosts();
+    
+    // Set up Realtime subscription
+    const subscription = supabase
+      .channel('public:posts')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'posts' }, () => {
+        fetchPosts();
+      })
+      .subscribe();
+
+    return () => {
+      subscription.unsubscribe();
+    };
+  }, []);
 
   const filters = [
     { id: 'all', label: 'كل العراق', icon: Sparkles },
-    { id: 'uni', label: 'جامعتي', icon: GraduationCap },
+    { id: 'uni', label: 'مؤسستي', icon: GraduationCap },
     { id: 'trending', label: 'تريند', icon: TrendingUp },
-    { id: 'following', label: 'أتابعهم', icon: Users },
     ...GOVERNORATES.map(gov => ({ id: gov, label: gov, icon: MapIcon }))
   ];
 
   const filteredPosts = posts.filter(post => {
     if (activeFilter === 'كل العراق') return true;
-    if (activeFilter === 'جامعتي') return post.institutionName === 'جامعة بغداد'; // Default demo uni
-    if (activeFilter === 'تريند') return post.likes > 1000;
-    if (activeFilter === 'أتابعهم') return post.likes > 500; // Simulated following
+    if (activeFilter === 'مؤسستي') return post.institutionName === profile?.institution;
+    if (activeFilter === 'تريند') return (post.likes || 0) > 100;
     return post.governorate === activeFilter;
   });
 
