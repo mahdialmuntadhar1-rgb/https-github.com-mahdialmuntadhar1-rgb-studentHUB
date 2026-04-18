@@ -1,0 +1,59 @@
+@import url('https://fonts.googleapis.com/css2?family=Cairo:wght@400;500;600;700;800&family=Inter:wght@400;500;600&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-arabic: "Cairo", sans-serif;
+
+  /* Iraqi Amber Palette */
+  --color-primary: #f4a820;      /* Deep Amber Gold */
+  --color-secondary: #1a1a2e;    /* Rich Charcoal */
+  --color-accent: #0f7173;       /* Warm Teal */
+  --color-surface: #fafaf8;      /* Off White */
+}
+
+@layer base {
+  html {
+    font-family: var(--font-arabic);
+    direction: rtl;
+    background-color: var(--color-surface);
+  }
+}
+
+.font-inter {
+  font-family: var(--font-sans);
+}
+
+.font-cairo {
+  font-family: var(--font-arabic);
+}
+
+/* Custom Hide Scrollbar */
+.hide-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.hide-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.shimmer {
+  background: linear-gradient(
+    90deg,
+    rgba(0, 0, 0, 0.05) 0%,
+    rgba(0, 0, 0, 0.1) 50%,
+    rgba(0, 0, 0, 0.05) 100%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.5s infinite linear;
+}
+
+@keyframes shimmer {
+  from {
+    background-position: 200% 0;
+  }
+  to {
+    background-position: -200% 0;
+  }
+}
+
